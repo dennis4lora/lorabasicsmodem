@@ -1930,6 +1930,8 @@ status_lorawan_t smtc_real_is_channel_mask_for_mobile_mode( const lr1_stack_mac_
         }
     }
 
+    return ( OKLORAWAN ); // work around
+
     for( int i = 0; i < const_number_of_tx_channel; i++ )
     {
         if( SMTC_GET_BIT8( unwrapped_channel_mask_ctx, i ) == CHANNEL_ENABLED )
