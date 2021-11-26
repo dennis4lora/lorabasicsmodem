@@ -166,6 +166,13 @@ static bool start_assisted_gnss_scan( void )
         return false;
     }
 
+    status = lr1110_gnss_set_constellations_to_use( NULL, LR1110_GNSS_GPS_MASK | LR1110_GNSS_BEIDOU_MASK );
+    if( status != LR1110_STATUS_OK )
+    {
+        SMTC_MODEM_HAL_TRACE_ERROR( "Fail to set constellations\n" );
+        return false;
+    }
+
     // Start a GNSS assisted scan
     status = lr1110_gnss_scan_assisted(
         NULL, date, LR1110_GNSS_OPTION_DEFAULT,

@@ -260,6 +260,14 @@ static void get_event( void )
                 {
                     SMTC_MODEM_HAL_TRACE_WARNING(
                         "Stream not ready or GPS time not updated. GNSS data won't be sent\n" );
+
+                    // Request ALC sync service again which is required for gnss assisted scan
+                    smtc_modem_set_alcsync_mode( 1 );
+
+                    if( smtc_modem_start_alarm_timer( SCAN_PERIOD_S ) != RC_OK )
+                    {
+                        SMTC_MODEM_HAL_TRACE_ERROR( "Failed to set an alarm\n" );
+                    }
                 }
 #endif
 
