@@ -72,6 +72,7 @@ print(my_almanac_in_hex)
  */
 
 #define TAG_NAV                6
+#define TAG_NAV_MF             16  // NAV multiframe
 #define DM_INTERVAL_USER_MIN   60
 
 

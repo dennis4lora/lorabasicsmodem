@@ -65,7 +65,8 @@
  */
 static uint16_t gnss_last_rslt_size;
 static uint8_t  gnss_last_rslt_buffer[254];  // the maximum length is 254 for each streaming
-static uint8_t* gnss_last_rslt_buffer_p = gnss_last_rslt_buffer + 1;
+static uint16_t gnss_temp_rslt_size;
+static uint8_t  gnss_temp_rslt_buffer[254];  // temp buffer for gnss result
 
 extern const lr1110_gnss_almanac_full_update_bytestream_t full_almanac;
 
@@ -74,6 +75,7 @@ extern const lr1110_gnss_almanac_full_update_bytestream_t full_almanac;
  * --- PRIVATE FUNCTIONS DECLARATION -------------------------------------------
  */
 static bool start_assisted_gnss_scan( void );
+static bool start_singleframe_assisted_gnss_scan( lr1110_gnss_date_t date );
 
 /*
  * -----------------------------------------------------------------------------
@@ -127,10 +129,9 @@ bool scan_and_stream_gnss( uint8_t stack_id, uint8_t port )
     {
         SMTC_MODEM_HAL_TRACE_INFO( "Start to stream GNSS result\n" );
 
-        gnss_last_rslt_buffer[0] = TAG_NAV;
-        gnss_last_rslt_buffer[1] = ( uint8_t ) gnss_last_rslt_size;
+        gnss_last_rslt_buffer[0] = TAG_NAV_MF;
         if( smtc_modem_stream_add_data( stack_id, port, gnss_last_rslt_buffer,
-                                        ( uint8_t )( gnss_last_rslt_size + 1 ) ) != RC_OK )
+                                        ( uint8_t )gnss_last_rslt_size ) != RC_OK )
         {
             SMTC_MODEM_HAL_TRACE_ERROR( "Failed to stream gnss data\n" );
         }
@@ -147,12 +148,9 @@ bool scan_and_stream_gnss( uint8_t stack_id, uint8_t port )
  */
 static bool start_assisted_gnss_scan( void )
 {
-    SMTC_MODEM_HAL_TRACE_INFO( "Start GNSS assisted scan\n" );
-
-    lr1110_gnss_detected_satellite_t gnss_last_sat_detect[24];
-    lr1110_status_t                  status;
-    lr1110_gnss_date_t               date;
-    uint8_t                          nb_satellite_detected;
+    bool                  status;
+    lr1110_gnss_date_t    date;
+    int                   n_frames = 4;  // one multi-frame request includes 4 NAVs
 
     if( smtc_modem_get_time( &date ) != RC_OK )
     {
@@ -173,10 +171,60 @@ static bool start_assisted_gnss_scan( void )
         return false;
     }
 
+    status = lr1110_gnss_set_constellations_to_use( NULL, LR1110_GNSS_GPS_MASK | LR1110_GNSS_BEIDOU_MASK );
+    if( status != LR1110_STATUS_OK )
+    {
+        SMTC_MODEM_HAL_TRACE_ERROR( "Fail to set constellations\n" );
+        return false;
+    }
+
+    gnss_last_rslt_size = 2;  // the 1st byte is for Tag type (TAG_NAV_MF); 2nd for the total payload length
+    gnss_last_rslt_buffer[1] = (uint8_t) gnss_last_rslt_size;
+    for( int n = 0; n < n_frames; n++ )
+    {
+        SMTC_MODEM_HAL_TRACE_WARNING( "DBG: %d, n=%d\n", __LINE__, n+1 );
+
+        status = start_singleframe_assisted_gnss_scan( date );
+        if( status != true )
+        {
+            if( n > 0 )
+                return true;
+            else
+                return false;
+        }
+        SMTC_MODEM_HAL_TRACE_WARNING( "DBG: %d\n", __LINE__ );
+
+        // copy payload and update gnss_last_rslt_size
+        // the 1st "1" is the byte for payload length; the "-1" because we'll skip the first byte of the payload
+        if( gnss_last_rslt_size + 1 + ( gnss_temp_rslt_size - 1 ) > 254 )
+        {
+            SMTC_MODEM_HAL_TRACE_WARNING( "GNSS payload too long to fit in gnss_last_rslt_buffer. Return now\n" );
+            return true;
+        }
+
+        // we skip the first byte of the payload because it's useless for geolocation resolving and confusing
+        gnss_last_rslt_buffer[gnss_last_rslt_size++] = gnss_temp_rslt_size - 1;
+        memcpy1(gnss_last_rslt_buffer + gnss_last_rslt_size, gnss_temp_rslt_buffer + 1, gnss_temp_rslt_size - 1);
+        gnss_last_rslt_size += gnss_temp_rslt_size - 1;
+        gnss_last_rslt_buffer[1] = (uint8_t) gnss_last_rslt_size;
+        SMTC_MODEM_HAL_TRACE_INFO( "n = %d, gnss_last_rslt_size = %d\n", n, gnss_last_rslt_size );
+    }
+
+    return true;
+}
+
+static bool start_singleframe_assisted_gnss_scan( lr1110_gnss_date_t date )
+{
+    SMTC_MODEM_HAL_TRACE_INFO( "Start GNSS assisted scan\n" );
+
+    lr1110_gnss_detected_satellite_t gnss_last_sat_detect[24];
+    lr1110_status_t                  status;
+    uint8_t                          nb_satellite_detected;
+
     // Start a GNSS assisted scan
     status = lr1110_gnss_scan_assisted(
         NULL, date, LR1110_GNSS_OPTION_DEFAULT,
-        LR1110_GNSS_IRQ_PSEUDO_RANGE_MASK + LR1110_GNSS_DOPPLER_MASK + LR1110_GNSS_BIT_CHANGE_MASK, 0 );
+        LR1110_GNSS_IRQ_PSEUDO_RANGE_MASK, 10 );
 
     if( status != LR1110_STATUS_OK )
     {
@@ -217,27 +265,27 @@ static bool start_assisted_gnss_scan( void )
                                      gnss_last_sat_detect[i].cnr );
     }
 
-    status = lr1110_gnss_get_result_size( NULL, &gnss_last_rslt_size );
+    status = lr1110_gnss_get_result_size( NULL, &gnss_temp_rslt_size );
     if( status != LR1110_STATUS_OK )
     {
         SMTC_MODEM_HAL_TRACE_ERROR( "Failed to get result size\n" );
         return false;
     }
 
-    // we make sure gnss_last_rslt_size can be hold in one byte here
-    if( gnss_last_rslt_size > sizeof( gnss_last_rslt_buffer ) - 1 )
+    // we make sure gnss_temp_rslt_size can be hold in one byte here
+    if( gnss_temp_rslt_size > sizeof( gnss_temp_rslt_buffer ) - 1 )
     {
-        SMTC_MODEM_HAL_TRACE_ERROR( "GNSS result buffer is too small to accept %d bytes\n", gnss_last_rslt_size );
+        SMTC_MODEM_HAL_TRACE_ERROR( "GNSS result buffer is too small to accept %d bytes\n", gnss_temp_rslt_size );
         return false;
     }
 
-    status = lr1110_gnss_read_results( NULL, gnss_last_rslt_buffer_p, gnss_last_rslt_size );
+    status = lr1110_gnss_read_results( NULL, gnss_temp_rslt_buffer, gnss_temp_rslt_size );
     if( status != LR1110_STATUS_OK )
     {
         SMTC_MODEM_HAL_TRACE_ERROR( "Failed to get result\n" );
         return false;
     }
-    SMTC_MODEM_HAL_TRACE_ARRAY( "GNSS result", gnss_last_rslt_buffer_p, gnss_last_rslt_size );
+    SMTC_MODEM_HAL_TRACE_ARRAY( "GNSS result", gnss_temp_rslt_buffer, gnss_temp_rslt_size );
 
     return true;
 }
