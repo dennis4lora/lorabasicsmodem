@@ -59,7 +59,7 @@
 
 // control to enable gnss scan and wifi scan
 #define ENABLE_GNSS_SCAN
-#define ENABLE_WIFI_SCAN
+//#define ENABLE_WIFI_SCAN
 
 /*
  * -----------------------------------------------------------------------------
