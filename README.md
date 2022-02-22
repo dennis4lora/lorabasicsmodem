@@ -1,3 +1,13 @@
+# Disclaimer
+
+This is an cloned repository. It includes a few small issues based on the `2.0.0-Alpha` tag, and it supports 4-NAV
+multi-frame format by default. It also merged the Alpha branch back to `master` branch to make things simpler.
+
+Please be noted that the latest lorabasicsmodem development is happening at [SDK](https://github.com/Lora-net/SWSD001).
+This one is just for users who still need it for their own reason.
+
+This is not an official Semtech repository. The author and Semtech takes no responsibility for any issue caused by this repository.
+
 # Hardware specificities  
 
 ### Reference board
